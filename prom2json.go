@@ -9,7 +9,6 @@ import (
 
 	"github.com/matttproud/golang_protobuf_extensions/pbutil"
 	"github.com/prometheus/common/expfmt"
-	"github.com/prometheus/common/log"
 
 	dto "github.com/prometheus/client_model/go"
 )
@@ -131,7 +130,7 @@ func FetchMetricFamilies(
 	if certificate != "" && key != "" {
 		cert, err := tls.LoadX509KeyPair(certificate, key)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 		tlsConfig := &tls.Config{
 			Certificates:       []tls.Certificate{cert},
@@ -151,16 +150,16 @@ func FetchMetricFamilies(
 func decodeContent(client *http.Client, url string, ch chan<- *dto.MetricFamily) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		log.Fatalf("creating GET request for URL %q failed: %s", url, err)
+		return nil, fmt.Sprintf("creating GET request for URL %q failed: %s", url, err)
 	}
 	req.Header.Add("Accept", acceptHeader)
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatalf("executing GET request for URL %q failed: %s", url, err)
+		return nil, fmt.Sprintf("executing GET request for URL %q failed: %s", url, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		log.Fatalf("GET request for URL %q returned HTTP status %s", url, resp.Status)
+		return nil, fmt.Sprintf("GET request for URL %q returned HTTP status %s", url, resp.Status)
 	}
 	ParseResponse(resp, ch)
 }
@@ -179,7 +178,7 @@ func ParseResponse(resp *http.Response, ch chan<- *dto.MetricFamily) {
 				if err == io.EOF {
 					break
 				}
-				log.Fatalln("reading metric family protocol buffer failed:", err)
+				return nil, fmt.Sprintf("reading metric family protocol buffer failed: %s", err)
 			}
 			ch <- mf
 		}
@@ -190,7 +189,7 @@ func ParseResponse(resp *http.Response, ch chan<- *dto.MetricFamily) {
 		var parser expfmt.TextParser
 		metricFamilies, err := parser.TextToMetricFamilies(resp.Body)
 		if err != nil {
-			log.Fatalln("reading text format failed:", err)
+			return nil, fmt.Sprintf("reading text format failed: %s", err)
 		}
 		for _, mf := range metricFamilies {
 			ch <- mf
