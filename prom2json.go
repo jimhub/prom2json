@@ -121,16 +121,18 @@ func makeBuckets(m *dto.Metric) map[string]string {
 // into MetricFamily proto messages, and sends them to the provided channel. It
 // returns after all MetricFamilies have been sent.
 func FetchMetricFamilies(
-	url string, ch chan<- *dto.MetricFamily,
+	url string, ch chan<- *dto.MetricFamily, errCh chan<- error,
 	certificate string, key string,
 	skipServerCertCheck bool,
 ) error {
 	defer close(ch)
+	defer close(errCh)
+
 	var transport *http.Transport
 	if certificate != "" && key != "" {
 		cert, err := tls.LoadX509KeyPair(certificate, key)
 		if err != nil {
-			return err
+			errCh <- err
 		}
 		tlsConfig := &tls.Config{
 			Certificates:       []tls.Certificate{cert},
@@ -145,31 +147,31 @@ func FetchMetricFamilies(
 	}
 	client := &http.Client{Transport: transport}
 
-	return decodeContent(client, url, ch)
+	return decodeContent(client, url, ch, errCh)
 }
 
-func decodeContent(client *http.Client, url string, ch chan<- *dto.MetricFamily) error {
+func decodeContent(client *http.Client, url string, ch chan<- *dto.MetricFamily, errCh chan<- error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return fmt.Errorf("creating GET request for URL %q failed: %s", url, err)
+		errCh <- fmt.Errorf("creating GET request for URL %q failed: %s", url, err)
 	}
 	req.Header.Add("Accept", acceptHeader)
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("executing GET request for URL %q failed: %s", url, err)
+		errCh <- fmt.Errorf("executing GET request for URL %q failed: %s", url, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GET request for URL %q returned HTTP status %s", url, resp.Status)
+		errCh <- fmt.Errorf("GET request for URL %q returned HTTP status %s", url, resp.Status)
 	}
 
-	return ParseResponse(resp, ch)
+	ParseResponse(resp, ch, errCh)
 }
 
 // ParseResponse consumes an http.Response and pushes it to the MetricFamily
 // channel. It returns when all all MetricFamilies are parsed and put on the
 // channel.
-func ParseResponse(resp *http.Response, ch chan<- *dto.MetricFamily) error {
+func ParseResponse(resp *http.Response, ch chan<- *dto.MetricFamily, errCh chan<- error) {
 	mediatype, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err == nil && mediatype == "application/vnd.google.protobuf" &&
 		params["encoding"] == "delimited" &&
@@ -180,7 +182,7 @@ func ParseResponse(resp *http.Response, ch chan<- *dto.MetricFamily) error {
 				if err == io.EOF {
 					break
 				}
-				return fmt.Errorf("reading metric family protocol buffer failed: %s", err)
+				errCh <- fmt.Errorf("reading metric family protocol buffer failed: %s", err)
 			}
 			ch <- mf
 		}
@@ -191,14 +193,12 @@ func ParseResponse(resp *http.Response, ch chan<- *dto.MetricFamily) error {
 		var parser expfmt.TextParser
 		metricFamilies, err := parser.TextToMetricFamilies(resp.Body)
 		if err != nil {
-			return fmt.Errorf("reading text format failed: %s", err)
+			errCh <- fmt.Errorf("reading text format failed: %s", err)
 		}
 		for _, mf := range metricFamilies {
 			ch <- mf
 		}
 	}
-
-	return nil
 }
 
 // AddLabel allows to add key/value labels to an already existing Family.
