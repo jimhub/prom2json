@@ -124,13 +124,13 @@ func FetchMetricFamilies(
 	url string, ch chan<- *dto.MetricFamily,
 	certificate string, key string,
 	skipServerCertCheck bool,
-) (bool, string) {
+) error {
 	defer close(ch)
 	var transport *http.Transport
 	if certificate != "" && key != "" {
 		cert, err := tls.LoadX509KeyPair(certificate, key)
 		if err != nil {
-			return false, err
+			return err
 		}
 		tlsConfig := &tls.Config{
 			Certificates:       []tls.Certificate{cert},
@@ -148,19 +148,19 @@ func FetchMetricFamilies(
 	return decodeContent(client, url, ch)
 }
 
-func decodeContent(client *http.Client, url string, ch chan<- *dto.MetricFamily) (bool, string) {
+func decodeContent(client *http.Client, url string, ch chan<- *dto.MetricFamily) error {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return false, fmt.Sprintf("creating GET request for URL %q failed: %s", url, err)
+		return fmt.Errorf("creating GET request for URL %q failed: %s", url, err)
 	}
 	req.Header.Add("Accept", acceptHeader)
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, fmt.Sprintf("executing GET request for URL %q failed: %s", url, err)
+		return fmt.Errorf("executing GET request for URL %q failed: %s", url, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Sprintf("GET request for URL %q returned HTTP status %s", url, resp.Status)
+		return fmt.Errorf("GET request for URL %q returned HTTP status %s", url, resp.Status)
 	}
 
 	return ParseResponse(resp, ch)
@@ -169,7 +169,7 @@ func decodeContent(client *http.Client, url string, ch chan<- *dto.MetricFamily)
 // ParseResponse consumes an http.Response and pushes it to the MetricFamily
 // channel. It returns when all all MetricFamilies are parsed and put on the
 // channel.
-func ParseResponse(resp *http.Response, ch chan<- *dto.MetricFamily) (bool, string) {
+func ParseResponse(resp *http.Response, ch chan<- *dto.MetricFamily) error {
 	mediatype, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 	if err == nil && mediatype == "application/vnd.google.protobuf" &&
 		params["encoding"] == "delimited" &&
@@ -180,7 +180,7 @@ func ParseResponse(resp *http.Response, ch chan<- *dto.MetricFamily) (bool, stri
 				if err == io.EOF {
 					break
 				}
-				return false, fmt.Sprintf("reading metric family protocol buffer failed: %s", err)
+				return fmt.Errorf("reading metric family protocol buffer failed: %s", err)
 			}
 			ch <- mf
 		}
@@ -191,7 +191,7 @@ func ParseResponse(resp *http.Response, ch chan<- *dto.MetricFamily) (bool, stri
 		var parser expfmt.TextParser
 		metricFamilies, err := parser.TextToMetricFamilies(resp.Body)
 		if err != nil {
-			return false, fmt.Sprintf("reading text format failed: %s", err)
+			return fmt.Errorf("reading text format failed: %s", err)
 		}
 		for _, mf := range metricFamilies {
 			ch <- mf
