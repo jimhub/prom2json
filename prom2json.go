@@ -198,7 +198,7 @@ func ParseResponse(resp *http.Response, ch chan<- *dto.MetricFamily) error {
 		}
 	}
 
-	return true, nil
+	return nil
 }
 
 // AddLabel allows to add key/value labels to an already existing Family.
