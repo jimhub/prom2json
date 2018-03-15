@@ -147,7 +147,7 @@ func FetchMetricFamilies(
 	}
 	client := &http.Client{Transport: transport}
 
-	return decodeContent(client, url, ch, errCh)
+	decodeContent(client, url, ch, errCh)
 }
 
 func decodeContent(client *http.Client, url string, ch chan<- *dto.MetricFamily, errCh chan<- error) {
