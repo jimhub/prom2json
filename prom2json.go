@@ -124,7 +124,7 @@ func FetchMetricFamilies(
 	url string, ch chan<- *dto.MetricFamily, errCh chan<- error,
 	certificate string, key string,
 	skipServerCertCheck bool,
-) error {
+) {
 	defer close(ch)
 	defer close(errCh)
 
