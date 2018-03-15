@@ -133,6 +133,7 @@ func FetchMetricFamilies(
 		cert, err := tls.LoadX509KeyPair(certificate, key)
 		if err != nil {
 			errCh <- err
+			return
 		}
 		tlsConfig := &tls.Config{
 			Certificates:       []tls.Certificate{cert},
@@ -154,15 +155,18 @@ func decodeContent(client *http.Client, url string, ch chan<- *dto.MetricFamily,
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		errCh <- fmt.Errorf("creating GET request for URL %q failed: %s", url, err)
+		return
 	}
 	req.Header.Add("Accept", acceptHeader)
 	resp, err := client.Do(req)
 	if err != nil {
 		errCh <- fmt.Errorf("executing GET request for URL %q failed: %s", url, err)
+		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		errCh <- fmt.Errorf("GET request for URL %q returned HTTP status %s", url, resp.Status)
+		return
 	}
 
 	ParseResponse(resp, ch, errCh)
@@ -183,6 +187,7 @@ func ParseResponse(resp *http.Response, ch chan<- *dto.MetricFamily, errCh chan<
 					break
 				}
 				errCh <- fmt.Errorf("reading metric family protocol buffer failed: %s", err)
+				return
 			}
 			ch <- mf
 		}
@@ -194,6 +199,7 @@ func ParseResponse(resp *http.Response, ch chan<- *dto.MetricFamily, errCh chan<
 		metricFamilies, err := parser.TextToMetricFamilies(resp.Body)
 		if err != nil {
 			errCh <- fmt.Errorf("reading text format failed: %s", err)
+			return
 		}
 		for _, mf := range metricFamilies {
 			ch <- mf
